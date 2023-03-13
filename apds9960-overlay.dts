@@ -1,0 +1,29 @@
+/dts-v1/;
+/plugin/;
+/ {
+	compatible = "brcm, bcm2835";
+	part_number = "globallogic-gestrure-apds9960";
+	version = "A1";
+
+	fragment@0 {
+		target = <&i2c1>;
+		__overlay__ {
+			#address-cells = <1>;
+			#size-cells = <0>;
+			#interrupt-cells = <2>;
+			status = "okay";
+
+			apds9960: apds9960@39 {
+				compatible = "globallogic, apds9960";
+				reg = <0x39>;
+				int-gpio = <&gpio 26 0>;
+				interrupt-parent = <&gpio>;
+				interrupts = <26 1>;
+				/* wakeup-source; */
+				status = "okay";
+			};
+		};
+	};
+};
+
+/* END OF FILE */
