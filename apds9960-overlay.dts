@@ -18,7 +18,7 @@
 				reg = <0x39>;
 				int-gpio = <&gpio 26 0>;
 				interrupt-parent = <&gpio>;
-				interrupts = <26 1>;
+				interrupts = <26 2>;
 				/* wakeup-source; */
 				status = "okay";
 			};

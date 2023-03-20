@@ -13,6 +13,7 @@
 #include <linux/interrupt.h>
 #include <linux/gpio/consumer.h>
 
+#include "apds9960.h"
 
 #define APDS9960_DEVICENAME		"apds9960"
 #define APDS9960_COMPATIBLE		"globallogic, apds9960"
@@ -37,106 +38,144 @@
 #define APDS9960_REG_RANGE_W_END	(0xE7)
 #define APDS9960_REG_MAX		(0xFF)
 
-			/* APDS9960 Register Set */
-#define APDS9960_RAM_START	(0x00)
-#define APDS9960_RAM_END	(0x7F)
-#define APDS9960_REG_ENABLE	(0x80) /* enable states and interrupts */
-#define APDS9960_REG_ATIME	(0x81) /* adc integration time */
-#define APDS9960_REG_WTIME	(0x83) /* wait time (non-gesture) */
+#define APDS9960_REG_ENA_GEN		(0x40) /* gesture enable mask */
+#define APDS9960_REG_ENA_PIEN		(0x20) /* prox interrupt enable mask */
+#define APDS9960_REG_ENA_PEN		(0x04) /* prox detection enable mask */
+#define APDS9960_REG_ENA_PON		(0x01) /* apds9960 power on  */
 
-#define APDS9960_REG_AILTL	(0x84) /* ALS int low threshold low byte*/
-#define APDS9960_REG_AILTH	(0x85) /* ALS int low threshold high byte*/
-#define APDS9960_REG_AIHTL	(0x86) /* ALS int hight threshold low byte */
-#define APDS9960_REG_AIHTH	(0x87) /* ALS int hight threshold hight byte*/
+#define APDS9960_REG_CFG1_WAIT		(0x60) /* CONFIG1 register wait long */
 
-#define APDS9960_REG_PILT	(0x89) /* proximity int low threshold */
-#define APDS9960_REG_PIHT	(0x8B) /* proximity int hight threshold */
-#define APDS9960_REG_PERS	(0x8C) /* int persistence filters non-gesture*/
+#define APDS9960_REG_PPULSE_8US		(0x40) /* prox pulse 8 us, out 1 cnt */
 
-#define APDS9960_REG_CONFIG1	(0x8D) /* configuration register one */
-#define APDS9960_REG_CONFIG2	(0x90) /* configuration register two */
-#define APDS9960_REG_CONFIG3	(0x9F) /* configuration register three */
+#define APDS9960_REG_CTRL_IVD		(0x40) /* 50 mA LED Drive Strength */
+#define APDS9960_REG_CTRL_PGAIN		(0x04) /* proximity gain x2 */
+#define APDS9960_REG_CTRL_AGAIN		(0x01) /* ALS and Color gain x4 */
 
-#define APDS9960_REG_PPULSE	(0x8E) /* proximity pulse count and lenght */
-#define APDS9960_REG_CONTROL	(0x8F) /* gain control */
+#define APDS9960_REG_GCONF1_GFIFOTH_4	(0x40)	/* interrupt after 4 datasets */
+#define APDS9960_REG_GCONF2_GGAIN_8	(0xc0) /* gesture gain x8 */
+#define APDS9960_REG_GCONF2_IVD_MAX	(0x18) /* max current strength for leds */
+#define APDS9960_REG_GCONF3_UDLR	(0x03) /* up-down left-right fifo data */
+#define APDS9960_REG_GCONF4_GIEN	(0x02) /* gesture interrupt enable */
+#define APDS9960_REG_GCONF4_GMOD	(0x01) /* gesture mode state */
 
-#define APDS9960_REG_ID		(0x92) /* Device ID */
-#define APDS9960_REG_STATUS	(0x93) /* Device status */
-#define APDS9960_REG_CDATAL	(0x94) /* lowbyte of clear channel data */
-#define APDS9960_REG_CDATAH	(0x95) /* highbyte of clear channel data */
-#define APDS9960_REG_RDATAL	(0x96) /* lowbyte of red channel data */
-#define APDS9960_REG_RDATAH	(0x97) /* highbyte of red channel data */
-#define APDS9960_REG_GDATAL	(0x98) /* lowbyte of green channel data */
-#define APDS9960_REG_GDATAH	(0x99) /* highbyte of green channel data */
-#define APDS9960_REG_BDATAL	(0x9A) /* lowbyte of blue channel data */
-#define APDS9960_REG_BDATAH	(0x9B) /* highbyte of blue channel data */
-#define APDS9960_PDATA		(0x9C) /* proximity data */
+#define APDS9960_REG_GSTATUS_GVALID	(0x01) /* check for valid data in fifo */
 
-#define APDS9960_REG_POFFSET_UR	(0x9D) /* prox offset for UP and RIGHT VD */
-#define APDS9960_REG_POFFSET_DL (0x9E) /* prox offset for DOWN and LEFT VD */
-#define APDS9960_REG_GPENTH	(0xA0) /* gesture proximity enter threshold */
-#define APDS9960_REG_GEXTH	(0xA1) /* gesture exit threshold */
+#define APDS9960_REG_STATUS_PINT	(0x20) /* proximity interupt mask */
+#define APDS9960_REG_STATUS_AINT	(0x10) /* als interrupt mask */
+#define APDS9960_REG_STATUS_GINT	(0x04) /* gesture interrupt mask */
 
-#define APDS9960_REG_GCONF1	(0xA2) /* gesture configuration one */
-#define APDS9960_REG_GCONF2	(0xA3) /* gesture configuration two */
-#define APDS9960_REG_GCONF3	(0xAA) /* gesture configuration three */
-#define APDS9960_REG_GCONF4	(0xAB) /* gestre configuration four */
+#define APDS9960_REG_GPENTH_DEFAULT	(0x50) /* gesture 'in' dflt threshold */
+#define APDS9960_REG_GEXTH_DEFAULT	(0x40) /* gesture 'out' dflt threshold */
 
-#define APDS9960_REG_GOFFSET_U	(0xA4) /* gesture UP offset register */
-#define APDS9960_REG_GOFFSET_D	(0xA5) /* gesture DOWN offset register */
-#define APDS9960_REG_GOFFSET_L	(0xA7) /* gesture LEFT offset register */
-#define APDS9960_REG_GOFFSET_R	(0xA9) /* gesture RIGHT offset register */
-#define APDS9960_REG_GPULSE	(0xA6) /* gesture pulse count and lenght */
-#define APDS9960_REG_GFLVL	(0xAE) /* gesture FIFO level */
-#define APDS9960_REG_GSTATUS	(0xAF) /* gesture status */
-
-		/* only write registers, special i2c address accessing */
-#define APDS9960_REG_IFORCE	(0xE4) /* force interrupt */
-#define APDS9960_REG_PICLEAR	(0xE5) /* proximity interrupt clear */
-#define APDS9960_REG_CICLEAR	(0xE6) /* ALS clear channel interrupts clear */
-#define APDS9960_REG_AICLEAR	(0xE7) /* all non-gesture interrupts clear */
-
-#define APDS9960_REG_GFIFO_U	(0xFC)	/* gesture FIFO UP value */
-#define APDS9960_REG_GFIFO_D	(0xFD)	/* gesture FIFO DOWN value */
-#define APDS9960_REG_GFIFO_L	(0xFE)	/* gesture FIFO LEFT value */
-#define APDS9960_REG_GFIFO_R	(0xFF)	/* gesture FIFO RIGHT value */
-
-/*		DEVICE TREE-OVERLAY DESCRIPTION
-{
-	compatible = "brcm, bcm2835";
-	part_number = "globallogic-gestrure-apds9960";
-	version = "A1";
-
-	fragment@0 {
-		target = <&i2c1>;
-		__overlay__ {
-			#address-cells = <1>;
-			#size-cells = <0>;
-			#interrupt-cells = <2>;
-			status = "okay";
-
-			apds9960: apds9960@39 {
-				compatible = "globallogic, apds9960";
-				reg = <0x39>;
-				int-gpio = <&gpio 26 0>;
-				interrupt-parent = <&gpio>;
-				interrupts = <26 1>;
-				// wakeup-source; //
-				status = "okay";
-			};
-		};
-	};
-};
-*/
 static struct apds9960_device {
 	struct device		*device;
+	/* struct gpio_desc	*irqpin; */
+	/* int			gesture_int; */
 	struct mutex		mutex;
 
 	struct regmap		*regmap;
 
-	int			gesture_int;
 	int			gesture_mode_on;
+	u8			gbuffer[4];
 };
+
+static int
+apds9960_set_power_mode(struct apds9960_device *apds9960, bool  mode)
+{
+	int err = 0;
+
+	err = regmap_update_bits(apds9960->regmap, APDS9960_REG_ENABLE, 1, mode);
+
+	return err;
+}
+
+static int
+apds9960_set_integration_time(struct apds9960_device *apds9960, unsigned int tim)
+{
+	return regmap_write(apds9960->regmap, APDS9960_REG_ATIME, tim);
+}
+
+static int
+apds9960_set_waiting_time(struct apds9960_device *apds9960, unsigned int tim)
+{
+	return regmap_write(apds9960->regmap, APDS9960_REG_WTIME, tim);
+}
+
+static int
+apds9960_get_prx_data(struct apds9960_device *apds9960, unsigned int *data)
+{
+	return regmap_read(apds9960->regmap, APDS9960_REG_PDATA, data);
+}
+
+static inline int
+apds9960_get_gfifo_lvl(struct apds9960_device *apds9960)
+{
+	int level, err;
+
+	err = regmap_read(apds9960->regmap, APDS9960_REG_GFLVL, &level);
+	if(err)
+		return err;
+	else
+		return level;
+}
+
+static int
+apds9960_get_status(struct apds9960_device *apds9960, unsigned int *status)
+{
+	return regmap_read(apds9960->regmap, APDS9960_REG_STATUS, status);
+}
+
+static int
+apds9960_get_gstatus(struct apds9960_device *apds9960, unsigned int *gstat)
+{
+	return regmap_read(apds9960->regmap, APDS9960_REG_GSTATUS, gstat);
+}
+
+static bool
+apds9960_gesture_is_valid(struct apds9960_device *apds9960)
+{
+	unsigned int tmp;
+	apds9960_get_gstatus(apds9960, &tmp);
+	if(tmp & APDS9960_REG_GSTATUS_GVALID)
+		return true;
+	else
+		return false;
+}
+
+static int
+apds9960_get_gfifo_data(struct apds9960_device *apds9960)
+{
+	int err = 0, gfifo_lvl = 0;
+	mutex_lock(&apds9960->mutex);
+	apds9960->gesture_mode_on = 1;
+
+	if(apds9960_gesture_is_valid(apds9960) == false){
+		pr_err("+++ isr: gesture data validation failed!\n");
+		goto err_read;
+	}
+
+	gfifo_lvl = apds9960_get_gfifo_lvl(apds9960);
+	while(gfifo_lvl){
+		/* TODO: throttling occured */
+	/*while(gfifo_lvl || (gfifo_lvl = apds9960_get_gfifo_lvl(apds9960) > 0)){*/
+		err = regmap_bulk_read(apds9960->regmap, APDS9960_REG_GFIFO_U,
+				&apds9960->gbuffer, 4);
+
+		if(err)
+			goto err_read;
+
+		gfifo_lvl--;
+	}
+
+err_read:
+	apds9960->gesture_mode_on = 0;
+	mutex_unlock(&apds9960->mutex);
+
+	pr_err("gesture data: [u]%x [d]%x [l]%x [r]%x\n", apds9960->gbuffer[0],
+		apds9960->gbuffer[1], apds9960->gbuffer[2], apds9960->gbuffer[3]);
+
+	return err;
+}
 
 
 #ifdef CONFIG_SYSFS
@@ -153,19 +192,24 @@ static ssize_t apds9960_show(struct device *dev,
 
 	if(strcmp(attr->attr.name, "id") == 0){
 		regmap_read(apds9960->regmap, APDS9960_REG_ID, &data);
-		pr_err("apds9960: Device id: %x\n", data);
+		len = sprintf(buf, "apds9960: Device id: %x\n", data);
 	}
 	else if(strcmp(attr->attr.name, "status") == 0){
-		regmap_read(apds9960->regmap, APDS9960_REG_STATUS, &data);
-		pr_err("apds9960: Status: %x\n", data);
+		apds9960_get_status(apds9960, &data);
+		len = sprintf(buf, "apds9960: Status: 0x%x\n", data);
 	}
 	else if(strcmp(attr->attr.name, "adc_itime") == 0){
 		regmap_read(apds9960->regmap, APDS9960_REG_ATIME, &data);
-		pr_err("apds9960: ADC Integration tome: %x\n", data);
+		len = sprintf(buf, "apds9960: ADC Integration time: 0x%x\n", data);
 	}
 	else if(strcmp(attr->attr.name, "wait_time") == 0){
 		regmap_read(apds9960->regmap, APDS9960_REG_WTIME, &data);
-		pr_err("apds9960: wait time: %x\n", data);
+		len = sprintf(buf, "apds9960: wait time: 0x%x\n", data);
+	}
+	else if(strcmp(attr->attr.name, "powermode") == 0){
+		regmap_read(apds9960->regmap, APDS9960_REG_ENABLE, &data);
+		data &= 0x01;
+		len = sprintf(buf, "apds9960: power is %x\n", data);
 	}
 
 	mutex_unlock(&apds9960->mutex);
@@ -177,10 +221,33 @@ static ssize_t apds9960_store(struct device *dev,
 		struct device_attribute *attr, const char *buf, size_t count)
 {
 	struct apds9960_device *apds9960 = dev_get_drvdata(dev);
+	unsigned int time;
+	bool powermode = false;
 
 	if(mutex_lock_killable(&apds9960->mutex))
 		return -EINTR;
 
+	if(strcmp(attr->attr.name, "powermode") == 0){
+		if(kstrtobool(&buf[0], &powermode) != 0)
+			goto fail;
+
+		apds9960_set_power_mode(apds9960, powermode);
+	}
+
+	else if(strcmp(attr->attr.name, "adc_itime") == 0){
+		if(kstrtou32(buf, 0, &time) != 0)
+			goto fail;
+
+		apds9960_set_integration_time(apds9960, time);
+	}
+
+	else if(strcmp(attr->attr.name, "wait_time") == 0){
+		if(kstrtou32(buf, 0, &time) != 0)
+			goto fail;
+
+		apds9960_set_waiting_time(apds9960, time);
+	}
+fail:
 	mutex_unlock(&apds9960->mutex);
 
 	return count;
@@ -188,6 +255,7 @@ static ssize_t apds9960_store(struct device *dev,
 
 static DEVICE_ATTR(id, S_IRUGO, apds9960_show, NULL);
 static DEVICE_ATTR(status, S_IRUGO, apds9960_show, NULL);
+static DEVICE_ATTR(powermode, S_IRUGO | S_IWUSR, apds9960_show, apds9960_store);
 static DEVICE_ATTR(adc_itime, S_IRUGO | S_IWUSR, apds9960_show, apds9960_store);
 static DEVICE_ATTR(wait_time, S_IRUGO | S_IWUSR, apds9960_show, apds9960_store);
 
@@ -196,6 +264,7 @@ static struct attribute *apds9960_attrs[] = {
 	&dev_attr_status.attr,
 	&dev_attr_adc_itime.attr,
 	&dev_attr_wait_time.attr,
+	&dev_attr_powermode.attr,
 	NULL
 };
 
@@ -270,25 +339,91 @@ static bool ds3231_readable_reg(struct device *dev, unsigned int reg)
 	return false;
 }
 
-
-/* TODO: complete irq routine after register configuration */
 static irqreturn_t apds9960_isr(int irq, void *data)
 {
 	struct apds9960_device *apds9960 = data;
+	int status, prox, err;
 
-	pr_err("apds9960: in irq! gesture: %d\n", apds9960->gesture_mode_on);
+	pr_err("+++ in iqr!\n");
+	err = apds9960_get_status(apds9960, &status);
+	if(err < 0){
+		pr_err("apds9960: ERR! can`t read status in irq!\n");
+		return IRQ_HANDLED;
+	}
+
+	if(status & APDS9960_REG_STATUS_PINT){
+		apds9960_get_prx_data(apds9960, &prox);
+		pr_err("prox interrupt occured! prox: %d\n", prox);
+	}
+
+	if(status & APDS9960_REG_STATUS_GINT){
+		apds9960_get_gfifo_data(apds9960);
+		pr_err("gesture interrupt occured!\n");
+	}
+
+	pr_err("--- out irq!\n");
 
 	return IRQ_HANDLED;
 }
 
 
-/* TODO: config registers for gesture mode opeartion with interrup */
 static int
 apds9960_register_configuration(struct apds9960_device *apds9960)
 {
 	int err = 0;
 
-	pr_err("apds9960: register configuration for gesture operations\n");
+	/* clear enable register bits before for safe operations */
+	err += regmap_update_bits(apds9960->regmap,
+			APDS9960_REG_ENABLE, 0xff, 0);
+
+	/* CONFIG1 regiser (0x8D) - wait long time x1 */
+	err += regmap_update_bits(apds9960->regmap, APDS9960_REG_CONFIG1,
+			APDS9960_REG_CFG1_WAIT, 0xFF);
+
+	/* CONFIG2 register (0x90) - saturation interupts for prox and clear */
+	err += regmap_update_bits(apds9960->regmap,
+			APDS9960_REG_CONFIG2, 0xFF, 1);
+
+	/* prox pulse count register (0x8E) - 8us width and 1 count output */
+	err += regmap_update_bits(apds9960->regmap, APDS9960_REG_PPULSE,
+			APDS9960_REG_PPULSE_8US, 0xFF);
+
+	/* Control register one (0x8F) gain control */
+	err += regmap_update_bits(apds9960->regmap, APDS9960_REG_CONTROL,
+			APDS9960_REG_CTRL_IVD | APDS9960_REG_CTRL_PGAIN |
+			APDS9960_REG_CTRL_AGAIN, 0xFF);
+
+	/* gesture GPENTH (0x40) and GENTH (0xA1) in-out thresholds*/
+	err += regmap_write(apds9960->regmap, APDS9960_REG_GPENTH,
+			APDS9960_REG_GPENTH_DEFAULT);
+	err += regmap_write(apds9960->regmap, APDS9960_REG_GEXTH,
+			APDS9960_REG_GEXTH_DEFAULT);
+
+	/* gesture configuration 1 (0xA2) - masks and isr for all channels */
+	err += regmap_update_bits(apds9960->regmap,
+			APDS9960_REG_GCONF1, APDS9960_REG_GCONF1_GFIFOTH_4, 0xFF);
+
+	/* gesture configuration 2 (0xA3) - wtime, VD current, gesture gain */
+	err += regmap_update_bits(apds9960->regmap,
+			APDS9960_REG_GCONF2, APDS9960_REG_GCONF2_GGAIN_8 |
+			APDS9960_REG_GCONF2_IVD_MAX, 0xFF);
+
+	/* gesture configuration 3 (0xAA) - dimensions selection: both pairs */
+	err += regmap_update_bits(apds9960->regmap, APDS9960_REG_GCONF3,
+			APDS9960_REG_GCONF3_UDLR, 0xFF);
+
+	/* gesture configuration 4 (0xAB) - operation mode and status */
+	err += regmap_update_bits(apds9960->regmap, APDS9960_REG_GCONF4,
+		APDS9960_REG_GCONF4_GIEN | APDS9960_REG_GCONF4_GMOD, 0xFF);
+
+	/* Enable Register (0x80) configuration for gesture mode */
+	err += regmap_update_bits(apds9960->regmap, APDS9960_REG_ENABLE,
+			APDS9960_REG_ENA_GEN | APDS9960_REG_ENA_PEN
+			/*| APDS9960_REG_ENA_PIEN*/, 0xFF);
+	if(err < 0){
+		pr_err("apds9960: can`t set-config ENABLE register!\n");
+		err = -EIO;
+	}
 
 	return err;
 }
@@ -301,6 +436,7 @@ apds9960_probe(struct i2c_client *client, const struct i2c_device_id *id)
 	struct apds9960_device *apds9960 = NULL;
 	unsigned int data;
 	int err = 0;
+	u32 tmp = 0;
 
 	pr_err("apds9960: probing the i2c device...\n");
 
@@ -318,6 +454,7 @@ apds9960_probe(struct i2c_client *client, const struct i2c_device_id *id)
 	apds9960_cfg.writeable_reg = ds3231_writeable_reg;
 	apds9960_cfg.readable_reg = ds3231_readable_reg;
 	apds9960_cfg.reg_defaults = apds9960_regdefault;
+	apds9960_cfg.cache_type = REGCACHE_RBTREE; /* !!! */
 	apds9960_cfg.num_reg_defaults = ARRAY_SIZE(apds9960_regdefault);
 
 	/*TODO: using spinlock (.fast_io) = true instead of
@@ -353,14 +490,30 @@ apds9960_probe(struct i2c_client *client, const struct i2c_device_id *id)
 		return PTR_ERR(apds9960->regmap);
 	}
 
-	/*TODO: apds9960 interrupt configuration */
+	err = regmap_read(apds9960->regmap, APDS9960_REG_ID, &data);
+	if(err != 0){
+		pr_err("apds9960: ERR! Can`t communicate!\n");
+		goto fail;
+	}
+	else
+		pr_err("apds9960: Device id: 0x%02x", data);
+
+	if(apds9960_register_configuration(apds9960) < 0)
+		pr_err("apds9960: ERR! Device configuration failed!\n");
+
+	if(!device_property_present(&client->dev, "interrupts"))
+		pr_err("can` read device tree property\n");
+
+	device_property_read_u32(&client->dev, "interrupts", &tmp);
+	pr_err("irq device property read: %d\n", tmp);
+
 	if(client->irq <= 0)
 		pr_err("apds9960: no valid irq defined!\n");
 	else
 		pr_err("apds990: irq is: %d\n", client->irq);
 
-	err = devm_request_irq(&client->dev, client->irq,
-			apds9960_isr, IRQF_TRIGGER_FALLING,
+	err = devm_request_threaded_irq(&client->dev, client->irq,
+			NULL, apds9960_isr, IRQF_TRIGGER_FALLING | IRQF_ONESHOT,
 			"apds9960_interrupt", apds9960);
 	if(err){
 		pr_err("apds9960: ERR! Can`t request irq (%d)!\n", client->irq);
@@ -369,9 +522,26 @@ apds9960_probe(struct i2c_client *client, const struct i2c_device_id *id)
 	else
 		pr_err("apds9960: irq request - success!\n");
 
+/*
+	apds9960->irqpin = devm_gpiod_get(&client->dev, "int", GPIOD_IN);
+	if(IS_ERR(apds9960->irqpin)){
+		pr_err("apds9960: ERR! Can`t get INT PIN\n");
+	}
 
-	regmap_read(apds9960->regmap, APDS9960_REG_ID, &data);
-	pr_err("apds9960: Device id: 0x%02x", data);
+	apds9960->gesture_int = gpiod_to_irq(apds9960->irqpin);
+	if(apds9960->gesture_int < 0)
+		pr_err("apds9960: ERR! Can`t set gpio irq number!\n");
+
+	err = devm_request_irq(&client->dev, apds9960->gesture_int,
+			apds9960_isr, IRQF_TRIGGER_FALLING,
+			"apds9960_interrupt", apds9960);
+	if(err)
+		pr_err("apds9960: ERR! Can`t request irq with gpio!\n");
+*/
+
+
+	if(apds9960_set_power_mode(apds9960, 1) < 0)
+		pr_err("apds9960: ERR! can`t turn on device!\n");
 
 	pr_err("apds9960: probing the device - done!\n");
 	pr_info("apds9960: client address:0x%02x. Data:%p\n",
@@ -396,6 +566,9 @@ apds9960_remove(struct i2c_client *client)
 	struct apds9960_device *apds9960 = i2c_get_clientdata(client);
 
 	pr_err("apds9960: removing the device...\n");
+
+	if(apds9960_set_power_mode(apds9960, 0) < 0)
+		pr_err("apds9960: ERR! can`t turn off device!\n");
 
 	if(apds9960->device){
 		root_device_unregister(apds9960->device);
