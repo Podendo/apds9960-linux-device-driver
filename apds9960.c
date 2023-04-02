@@ -67,7 +67,7 @@
 #define APDS9960_REG_GPENTH_DEFAULT	(0x50) /* gesture 'in' dflt threshold */
 #define APDS9960_REG_GEXTH_DEFAULT	(0x40) /* gesture 'out' dflt threshold */
 
-static struct apds9960_device {
+struct apds9960_device {
 	struct device		*device;
 	/* struct gpio_desc	*irqpin; */
 	/* int			gesture_int; */
@@ -76,6 +76,7 @@ static struct apds9960_device {
 	struct regmap		*regmap;
 
 	int			gesture_mode_on;
+	int			gesture_movement;
 	u8			gbuffer[4];
 };
 
@@ -113,8 +114,10 @@ apds9960_get_gfifo_lvl(struct apds9960_device *apds9960)
 	int level, err;
 
 	err = regmap_read(apds9960->regmap, APDS9960_REG_GFLVL, &level);
-	if(err)
+	if(err){
+		pr_err("%s error, %d\n", __func__, err);
 		return err;
+	}
 	else
 		return level;
 }
@@ -142,24 +145,72 @@ apds9960_gesture_is_valid(struct apds9960_device *apds9960)
 		return false;
 }
 
+#define APDS9960_NA	(0)
+#define APDS9960_UP	(1)
+#define APDS9960_DOWN	(2)
+#define APDS9960_RIGHT	(3)
+#define APDS9960_LEFT	(4)
 static int
 apds9960_get_gfifo_data(struct apds9960_device *apds9960)
 {
 	int err = 0, gfifo_lvl = 0;
+	int ud_diff = 0, lr_diff = 0;
+	int cnts_left = 0, cnts_right = 0, cnts_up = 0, cnts_down = 0;
+
 	mutex_lock(&apds9960->mutex);
 	apds9960->gesture_mode_on = 1;
+	apds9960->gesture_movement = APDS9960_NA;
 
 	if(apds9960_gesture_is_valid(apds9960) == false){
-		pr_err("+++ isr: gesture data validation failed!\n");
+		pr_err("### apds9960 isr: gesture data validation failed!\n");
 		goto err_read;
 	}
 
 	gfifo_lvl = apds9960_get_gfifo_lvl(apds9960);
-	while(gfifo_lvl){
-		/* TODO: throttling occured */
-	/*while(gfifo_lvl || (gfifo_lvl = apds9960_get_gfifo_lvl(apds9960) > 0)){*/
+
+	while(gfifo_lvl || (gfifo_lvl = apds9960_get_gfifo_lvl(apds9960) > 0)){
+
 		err = regmap_bulk_read(apds9960->regmap, APDS9960_REG_GFIFO_U,
 				&apds9960->gbuffer, 4);
+
+		if(abs((int)apds9960->gbuffer[0] - (int)apds9960->gbuffer[1]) > 0)
+			ud_diff +=
+				(int)apds9960->gbuffer[0] - (int)apds9960->gbuffer[1];
+
+		if(abs((int)apds9960->gbuffer[2] - (int)apds9960->gbuffer[3]) > 0)
+			lr_diff +=
+				(int)apds9960->gbuffer[2] - (int)apds9960->gbuffer[3];
+
+		/* pr_err("ud_diff %x and lr_diff %x\n", ud_diff, lr_diff); */
+
+		if(ud_diff != 0){
+			if(ud_diff < 0){
+				if(cnts_down > 0)
+					apds9960->gesture_movement = APDS9960_UP;
+				else	cnts_up++;
+			}
+			else if(ud_diff > 0){
+				if(cnts_up > 0)
+					apds9960->gesture_movement = APDS9960_DOWN;
+				else	cnts_down++;
+			}
+		}
+
+		if(lr_diff != 0){
+			if(lr_diff < 0){
+				if(cnts_right > 0)
+					apds9960->gesture_movement = APDS9960_LEFT;
+				else	cnts_left++;
+			}
+			else if(lr_diff > 0){
+				if(cnts_left > 0)
+					apds9960->gesture_movement = APDS9960_RIGHT;
+				else	cnts_right++;
+			}
+		}
+
+		/* pr_err("cnts_down is %x cnst_up is %x cnts_l is %x cnts_r is %x",
+				cnts_down, cnts_up, cnts_left, cnts_right); */
 
 		if(err)
 			goto err_read;
@@ -167,12 +218,13 @@ apds9960_get_gfifo_data(struct apds9960_device *apds9960)
 		gfifo_lvl--;
 	}
 
+	/* pr_err("calculated gesture: udlr::1-2-3-4 -> %d\n",
+			apds9960->gesture_movement); */
+
 err_read:
 	apds9960->gesture_mode_on = 0;
+	sysfs_notify(&apds9960->device->kobj, "parameters", "movement");
 	mutex_unlock(&apds9960->mutex);
-
-	pr_err("gesture data: [u]%x [d]%x [l]%x [r]%x\n", apds9960->gbuffer[0],
-		apds9960->gbuffer[1], apds9960->gbuffer[2], apds9960->gbuffer[3]);
 
 	return err;
 }
@@ -211,6 +263,28 @@ static ssize_t apds9960_show(struct device *dev,
 		data &= 0x01;
 		len = sprintf(buf, "apds9960: power is %x\n", data);
 	}
+	else if(strcmp(attr->attr.name, "movement") == 0){
+		switch(apds9960->gesture_movement){
+			case APDS9960_NA:
+				len = sprintf(buf, "PROX gesture\n");
+				break;
+			case APDS9960_LEFT:
+				len = sprintf(buf, "LEFT gesture\n");
+				break;
+			case APDS9960_RIGHT:
+				len = sprintf(buf, "RIGHT gesture\n");
+				break;
+			case APDS9960_DOWN:
+				len = sprintf(buf, "DOWN gesture\n");
+				break;
+			case APDS9960_UP:
+				len = sprintf(buf, "UP gesture\n");
+				break;
+			default:
+				len = sprintf(buf, "can`t calculate data\n");
+				break;
+		}
+	}
 
 	mutex_unlock(&apds9960->mutex);
 
@@ -221,7 +295,7 @@ static ssize_t apds9960_store(struct device *dev,
 		struct device_attribute *attr, const char *buf, size_t count)
 {
 	struct apds9960_device *apds9960 = dev_get_drvdata(dev);
-	unsigned int time;
+	unsigned int time = 0;
 	bool powermode = false;
 
 	if(mutex_lock_killable(&apds9960->mutex))
@@ -255,6 +329,7 @@ fail:
 
 static DEVICE_ATTR(id, S_IRUGO, apds9960_show, NULL);
 static DEVICE_ATTR(status, S_IRUGO, apds9960_show, NULL);
+static DEVICE_ATTR(movement, S_IRUGO, apds9960_show, NULL);
 static DEVICE_ATTR(powermode, S_IRUGO | S_IWUSR, apds9960_show, apds9960_store);
 static DEVICE_ATTR(adc_itime, S_IRUGO | S_IWUSR, apds9960_show, apds9960_store);
 static DEVICE_ATTR(wait_time, S_IRUGO | S_IWUSR, apds9960_show, apds9960_store);
@@ -262,6 +337,7 @@ static DEVICE_ATTR(wait_time, S_IRUGO | S_IWUSR, apds9960_show, apds9960_store);
 static struct attribute *apds9960_attrs[] = {
 	&dev_attr_id.attr,
 	&dev_attr_status.attr,
+	&dev_attr_movement.attr,
 	&dev_attr_adc_itime.attr,
 	&dev_attr_wait_time.attr,
 	&dev_attr_powermode.attr,
@@ -269,7 +345,7 @@ static struct attribute *apds9960_attrs[] = {
 };
 
 static struct attribute_group apds9960_group = {
-	.name = "configuration",
+	.name = "parameters",
 	.attrs = apds9960_attrs,
 };
 
@@ -383,7 +459,6 @@ apds9960_register_configuration(struct apds9960_device *apds9960)
 	/* CONFIG2 register (0x90) - saturation interupts for prox and clear */
 	err += regmap_update_bits(apds9960->regmap,
 			APDS9960_REG_CONFIG2, 0xFF, 1);
-
 	/* prox pulse count register (0x8E) - 8us width and 1 count output */
 	err += regmap_update_bits(apds9960->regmap, APDS9960_REG_PPULSE,
 			APDS9960_REG_PPULSE_8US, 0xFF);
@@ -454,15 +529,26 @@ apds9960_probe(struct i2c_client *client, const struct i2c_device_id *id)
 	apds9960_cfg.writeable_reg = ds3231_writeable_reg;
 	apds9960_cfg.readable_reg = ds3231_readable_reg;
 	apds9960_cfg.reg_defaults = apds9960_regdefault;
-	apds9960_cfg.cache_type = REGCACHE_RBTREE; /* !!! */
+
+	/*TODO: using regmap_config.cache_type = REGCACHE_RBTREE
+	 * results in a BUG: after first read GFIFO or PROX regs
+	 * regmap_read() returns constant value, even if the val
+	 * has changed - this function returns first-read value
+	 * apds9960_cfg.cache_type = REGCACHE_RBTREE; -> SEGFAULT -22
+	 * apds9960_cfg.cache_type = REGCACHE_COMPRESSED; -> SEGFAULT -22
+	 * apds9960_cfg.cache_type = REGCACHE_FLAT; -> SEGFAULT -22
+	 * */
+
+	apds9960_cfg.cache_type = REGCACHE_NONE;
 	apds9960_cfg.num_reg_defaults = ARRAY_SIZE(apds9960_regdefault);
 
-	/*TODO: using spinlock (.fast_io) = true instead of
-	 * mutex (.fast_io = false) results in an BUG:
-	 * scheduling while in atomic-context with regmap_read
-	 * or regmap_write functions
+	/* false - mutex locking, used for bus-cases
+	 * true - spinlock locking, used for no bus-cases
 	 * */
 	apds9960_cfg.fast_io = false;
+
+	apds9960_cfg.use_single_read = true;
+	apds9960_cfg.use_single_write = true;
 
 	/* apds9960 data structure allocation with i2c interface */
 	apds9960 = kzalloc(sizeof(struct apds9960_device), GFP_KERNEL);
@@ -497,6 +583,9 @@ apds9960_probe(struct i2c_client *client, const struct i2c_device_id *id)
 	}
 	else
 		pr_err("apds9960: Device id: 0x%02x", data);
+
+	//regmap_i2c_read(apds9960, APDS9960_REG_ID, 1, &data, 1);
+	pr_err("apds9960: Device id: 0x%02x", data);
 
 	if(apds9960_register_configuration(apds9960) < 0)
 		pr_err("apds9960: ERR! Device configuration failed!\n");
@@ -546,7 +635,6 @@ apds9960_probe(struct i2c_client *client, const struct i2c_device_id *id)
 	pr_err("apds9960: probing the device - done!\n");
 	pr_info("apds9960: client address:0x%02x. Data:%p\n",
 			client->addr, apds9960);
-
 
 	return 0;
 
