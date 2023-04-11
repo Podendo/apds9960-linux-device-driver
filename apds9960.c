@@ -16,7 +16,7 @@
 #include "apds9960.h"
 
 #define APDS9960_DEVICENAME		"apds9960"
-#define APDS9960_COMPATIBLE		"globallogic, apds9960"
+#define APDS9960_COMPATIBLE		"avago, apds9960"
 #define APDS9960_DEVICE_ID		(0xAB)
 
 #define APDS9960_REG_SIZE		(8)
@@ -306,6 +306,7 @@ static ssize_t apds9960_store(struct device *dev,
 			goto fail;
 
 		apds9960_set_power_mode(apds9960, powermode);
+		sysfs_notify(&apds9960->device->kobj, "parameters", "powermode");
 	}
 
 	else if(strcmp(attr->attr.name, "adc_itime") == 0){
@@ -313,6 +314,7 @@ static ssize_t apds9960_store(struct device *dev,
 			goto fail;
 
 		apds9960_set_integration_time(apds9960, time);
+		sysfs_notify(&apds9960->device->kobj, "parameters", "adc_itime");
 	}
 
 	else if(strcmp(attr->attr.name, "wait_time") == 0){
@@ -320,6 +322,7 @@ static ssize_t apds9960_store(struct device *dev,
 			goto fail;
 
 		apds9960_set_waiting_time(apds9960, time);
+		sysfs_notify(&apds9960->device->kobj, "parameters", "wait_time");
 	}
 fail:
 	mutex_unlock(&apds9960->mutex);
@@ -327,9 +330,9 @@ fail:
 	return count;
 }
 
-static DEVICE_ATTR(id, S_IRUGO, apds9960_show, NULL);
-static DEVICE_ATTR(status, S_IRUGO, apds9960_show, NULL);
-static DEVICE_ATTR(movement, S_IRUGO, apds9960_show, NULL);
+static DEVICE_ATTR(id,        S_IRUGO | S_IWUSR, apds9960_show, NULL);
+static DEVICE_ATTR(status,    S_IRUGO | S_IWUSR, apds9960_show, NULL);
+static DEVICE_ATTR(movement,  S_IRUGO | S_IWUSR, apds9960_show, NULL);
 static DEVICE_ATTR(powermode, S_IRUGO | S_IWUSR, apds9960_show, apds9960_store);
 static DEVICE_ATTR(adc_itime, S_IRUGO | S_IWUSR, apds9960_show, apds9960_store);
 static DEVICE_ATTR(wait_time, S_IRUGO | S_IWUSR, apds9960_show, apds9960_store);

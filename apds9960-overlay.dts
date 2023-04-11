@@ -2,7 +2,7 @@
 /plugin/;
 / {
 	compatible = "brcm, bcm2835";
-	part_number = "globallogic-gestrure-apds9960";
+	part_number = "avago-gestrure-apds9960";
 	version = "A1";
 
 	fragment@0 {
@@ -14,7 +14,7 @@
 			status = "okay";
 
 			apds9960: apds9960@39 {
-				compatible = "globallogic, apds9960";
+				compatible = "avago, apds9960";
 				reg = <0x39>;
 				int-gpio = <&gpio 26 0>;
 				interrupt-parent = <&gpio>;
