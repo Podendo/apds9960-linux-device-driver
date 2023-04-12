@@ -288,7 +288,7 @@ static ssize_t apds9960_show(struct device *dev,
 
 	mutex_unlock(&apds9960->mutex);
 
-	return len;
+	return (len + 1); /* sprintf returnvalue is size - 1, for u-s app  add 1 */
 }
 
 static ssize_t apds9960_store(struct device *dev,

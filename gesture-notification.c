@@ -14,12 +14,37 @@
 #define SYSFS_ATTR_WAITTIME	"/sys/devices/apds9960/parameters/wait_time"
 
 #define SYSFS_ATTR_PTIME	(int)(10000)
-#define SYSFS_ATTR_MAXLEN	(int)(100)
+#define SYSFS_ATTR_MAXLEN	(int)(50)
 #define SYSFS_ATTR_NUM		(int)(4) /* defined paths of sysfs attributes */
+
+/**
+ * @brief Reads / Prints a sysfs sensor-attributes according to received event
+ * @param	fd		An array of attribute's file-descriptors
+ * @param	buf		Data-buffer for each attribute's value
+ * @param	ufds		array of file-descriptor for polling call
+ * @param	attr_num	Number of sysfs-nodes for polling call
+ */
+int read_attributes(int *fd, void *buf, void *ufds, int attr_num)
+{
+	int i = 0, err = 1;
+	struct pollfd *priv = (struct pollfd *)ufds;
+
+	for( i = 0; i < attr_num; i++) {
+		if(priv[i].revents == (POLLPRI | POLLERR)) {
+			err *= pread(fd[i], buf, SYSFS_ATTR_MAXLEN, 0);
+			printf("parameter %d is %s", i, (char*)buf);
+			printf("revents %d is %04x\n", i, priv[i].revents);
+		} else {
+			__asm__("nop");
+		}
+	}
+
+	return err;
+}
 
 int main(void)
 {
-	int count = 0, err = 0, i = 0;
+	int err = 0, i = 0;
 	int attr_fd[SYSFS_ATTR_NUM];
 	struct pollfd ufds[SYSFS_ATTR_NUM];
 
@@ -43,20 +68,18 @@ int main(void)
 			ufds[i].fd = attr_fd[i];
 			ufds[i].events = POLLPRI | POLLERR;
 
-			/* reading before the poll() call */
-			count += read(attr_fd[i], (attr_data + count),
-					(sizeof(attr_data)/sizeof(char) + 1));
+			/* dummy-reading before the poll() call */
+			if( ! pread(attr_fd[i], (attr_data),
+					(sizeof(attr_data)/sizeof(char)), 0)) {
+				printf("apds9960: 0 bytes from %d node!\n", i);
+				exit(1);
+			}
 
 			ufds[i].revents = 0;
+			/*printf("%s\n", attr_data); print dummy reads for debug */
 		}
 
-		printf("%s\n", attr_data);
-		if(memset(attr_data, 0, sizeof(attr_data)) != &attr_data[0]) {
-			printf("apds9960: can't clear attribte buffer!\n");
-			exit(1);
-		}
-
-		if(( err = poll(ufds,  1/*SYSFS_ATTR_NUM*/, SYSFS_ATTR_PTIME)) < 0) {
+		if(( err = poll(ufds, SYSFS_ATTR_NUM, SYSFS_ATTR_PTIME)) < 0) {
 			printf("apds9960: polling error!\n");
 		}
 		else if(err == 0) {
@@ -64,14 +87,11 @@ int main(void)
 		}
 		else {
 			printf("apds9960: polling triggered!\n");
-			count = read(attr_fd[0], attr_data,
-					(sizeof(attr_data)/sizeof(char) + 1));
-
-			printf("apds9960: movement is %s\n", attr_data);
-			printf("count is %d\n", count);
-
-			/* TODO: Incorrect output for multiple attribute-polling */
-			printf("movement  event: %04x\n", ufds[0].revents);
+			if(read_attributes(attr_fd, attr_data,
+						ufds, SYSFS_ATTR_NUM) == 0) {
+				printf("apds9960: can`t read attribues!\n");
+				exit(1);
+			}
 		}
 
 		for (i = 0; i < SYSFS_ATTR_NUM; i++) {
