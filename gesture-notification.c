@@ -13,7 +13,7 @@
 #define SYSFS_ATTR_ADCITIME	"/sys/devices/apds9960/parameters/adc_itime"
 #define SYSFS_ATTR_WAITTIME	"/sys/devices/apds9960/parameters/wait_time"
 
-#define SYSFS_ATTR_PTIME	(int)(100000)
+#define SYSFS_ATTR_PTIME	(int)(10000)
 #define SYSFS_ATTR_MAXLEN	(int)(100)
 #define SYSFS_ATTR_NUM		(int)(4) /* defined paths of sysfs attributes */
 
@@ -33,6 +33,7 @@ int main(void)
 
 	while(1) { /* if you want to stop program, use sigkill ctrl+c */
 		/* Opening a connection to the attribute file */
+
 		for(i = 0; i < SYSFS_ATTR_NUM; i++) {
 			if((attr_fd[i] = open(attr_path[i], O_RDWR)) < 0) {
 				printf("apds9960: open attr[%d] failed!\n", i);
@@ -44,15 +45,18 @@ int main(void)
 
 			/* reading before the poll() call */
 			count += read(attr_fd[i], (attr_data + count),
-					sizeof(attr_data)/sizeof(char));
+					(sizeof(attr_data)/sizeof(char) + 1));
 
 			ufds[i].revents = 0;
 		}
 
 		printf("%s\n", attr_data);
-		memset(attr_data, 0, sizeof(attr_data));
+		if(memset(attr_data, 0, sizeof(attr_data)) != &attr_data[0]) {
+			printf("apds9960: can't clear attribte buffer!\n");
+			exit(1);
+		}
 
-		if(( err = poll(ufds, SYSFS_ATTR_NUM, SYSFS_ATTR_PTIME)) < 0) {
+		if(( err = poll(ufds,  1/*SYSFS_ATTR_NUM*/, SYSFS_ATTR_PTIME)) < 0) {
 			printf("apds9960: polling error!\n");
 		}
 		else if(err == 0) {
@@ -61,19 +65,18 @@ int main(void)
 		else {
 			printf("apds9960: polling triggered!\n");
 			count = read(attr_fd[0], attr_data,
-					sizeof(attr_data)/sizeof(char));
+					(sizeof(attr_data)/sizeof(char) + 1));
 
 			printf("apds9960: movement is %s\n", attr_data);
 			printf("count is %d\n", count);
 
-			/* TODO: Incorrect output for multiple attribe-polling */
+			/* TODO: Incorrect output for multiple attribute-polling */
 			printf("movement  event: %04x\n", ufds[0].revents);
 		}
 
-	}
-
-	for (i = 0; i < SYSFS_ATTR_NUM; i++) {
-		close(attr_fd[i]);
+		for (i = 0; i < SYSFS_ATTR_NUM; i++) {
+			close(attr_fd[i]);
+		}
 	}
 
 	return 0;

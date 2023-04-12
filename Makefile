@@ -6,7 +6,7 @@ DTBS = apds9960-overlay.dts
 
 CMP = gcc
 OPT_LEVEL = 0
-CMPFLAGS = -Wall -Wextra -O$(OPT_LEVEL)
+CMPFLAGS = -Wall -Wextra -g -O$(OPT_LEVEL)
 APP_IN = gesture-notification.c
 APP_OUT = gesture-notification
 
